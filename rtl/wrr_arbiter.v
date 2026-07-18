@@ -80,7 +80,7 @@ always @(posedge clk or negedge rst_n) begin
         credit2 <= W3;
         grant <= 2'b11;
         last_grant <= 2'b11;
-    end else if (arb_advance) begin
+    end else if (arb_advance || grant==2'b11) begin
         grant <= next_grant;
 
         if(next_grant !=2'b11) begin

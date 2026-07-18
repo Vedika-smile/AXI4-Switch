@@ -1,474 +1,348 @@
-// module axi4_switch_top #(
-//     parameter DATA_WIDTH = 32,
-//     parameter ADDR_WIDTH = 32,
-//     parameter ID_WIDTH   = 4,
-//     parameter STRB_WIDTH  = DATA_WIDTH / 8
-// )(
-//     input clk_sys, //switch domain clock 
-//     input rst_n, //active high 
-//     input clk_m0, clk_m1, clk_m2,
-//     input rst_n_m2, rst_n_m1, rst_n_m0,   
+// =============================================================================
+// Module: axi4_switch_top
+// Purpose: Top-level 3-master : 1-slave AXI4 switch.
+//          Instantiates 3x axi_master_if (per-master CDC firewall) feeding
+//          a single crossbar (WRR arbitration, ID remap, mux/demux) that
+//          drives one slave in clk_sys domain.
+//
+// Slave-side ID width = ID_WIDTH + 2 (2-bit master-prefix remap, supports
+// up to 4 masters; only 3 used here -> grant values 2'b00/01/10).
+// =============================================================================
+module axi4_switch_top #(
+    parameter DATA_WIDTH = 32,
+    parameter ADDR_WIDTH = 32,
+    parameter ID_WIDTH   = 4,
+    parameter FIFO_DEPTH = 16,
+    parameter FIFO_PTR   = 4,
+    parameter W1 = 1,
+    parameter W2 = 2,
+    parameter W3 = 4
+)(
+    // =========================================================================
+    // Master 0
+    // =========================================================================
+    input  wire                    m0_clk,
+    input  wire                    m0_rst_n,
 
-//     //============================================================
-//     //master_1 : 1 mbps
-//     //===========================================================
-//     //AW channel
-//     input [ADDR_WIDTH-1:0] m0_awaddr,
-//     input [ID_WIDTH-1:0] m0_awid,
-//     input [7:0] m0_awlen,
-//     input [2:0] m0_awsize,
-//     input [1:0] m0_awburst,
-//     input m0_awvalid,
-//     output m0_awready,
-    
-//     //w channel
-//     input [DATA_WIDTH-1:0] m0_wdata,
-//     input [DATA_WIDTH/8-1:0] m0_wstrb,
-//     input m0_wlast,
-//     input m0_wvalid,
-//     output m0_wready,
+    input  wire [ID_WIDTH-1:0]     m0_awid,
+    input  wire [ADDR_WIDTH-1:0]   m0_awaddr,
+    input  wire [7:0]              m0_awlen,
+    input  wire [2:0]              m0_awsize,
+    input  wire [1:0]              m0_awburst,
+    input  wire                    m0_awvalid,
+    output wire                    m0_awready,
 
-//     //b channel
-//     output [ID_WIDTH-1:0] m0_bid,
-//     output [1:0] m0_bresp,
-//     output m0_bvalid,
-//     input m0_bready,
+    input  wire [DATA_WIDTH-1:0]   m0_wdata,
+    input  wire [DATA_WIDTH/8-1:0] m0_wstrb,
+    input  wire                    m0_wlast,
+    input  wire                    m0_wvalid,
+    output wire                    m0_wready,
 
-//     //AR channel 
-//     input [ADDR_WIDTH-1:0] m0_araddr,
-//     input [ID_WIDTH-1:0] m0_arid,
-//     input [7:0] m0_arlen,
-//     input [2:0] m0_arsize,
-//     input [1:0] m0_arburst,
-//     input m0_arvalid,
-//     output m0_arready,
+    output wire [ID_WIDTH-1:0]     m0_bid,
+    output wire [1:0]              m0_bresp,
+    output wire                    m0_bvalid,
+    input  wire                    m0_bready,
 
-//     //r channel
-//     output [ID_WIDTH-1:0] m0_rid,
-//     output [DATA_WIDTH-1:0] m0_rdata,
-//     output [1:0] m0_rresp,
-//     output m0_rlast,
-//     output m0_rvalid,
-//     input m0_rready,
-//     //======================================================
-//     //Master 2: 2 Mbps
-//     //======================================================
-//     //AW channel
+    input  wire [ID_WIDTH-1:0]     m0_arid,
+    input  wire [ADDR_WIDTH-1:0]   m0_araddr,
+    input  wire [7:0]              m0_arlen,
+    input  wire [2:0]              m0_arsize,
+    input  wire [1:0]              m0_arburst,
+    input  wire                    m0_arvalid,
+    output wire                    m0_arready,
 
-//     input [ADDR_WIDTH-1:0] m1_awaddr,
-//     input [ID_WIDTH-1:0] m1_awid,
-//     input [7:0] m1_awlen,
-//     input [2:0] m1_awsize,
-//     input [1:0] m1_awburst, 
-//     input m1_awvalid,
-//     output m1_awready,
+    output wire [ID_WIDTH-1:0]     m0_rid,
+    output wire [DATA_WIDTH-1:0]   m0_rdata,
+    output wire [1:0]              m0_rresp,
+    output wire                    m0_rlast,
+    output wire                    m0_rvalid,
+    input  wire                    m0_rready,
 
-//     //w channel
-//     input [DATA_WIDTH-1:0] m1_wdata,
-//     input [DATA_WIDTH/8-1:0] m1_wstrb,
-//     input m1_wlast,
-//     input m1_wvalid,
-//     output m1_wready,   
+    // =========================================================================
+    // Master 1
+    // =========================================================================
+    input  wire                    m1_clk,
+    input  wire                    m1_rst_n,
 
-//     //b channel
-//     output [ID_WIDTH-1:0] m1_bid,
-//     output [1:0] m1_bresp,
-//     output m1_bvalid,
-//     input m1_bready,    
+    input  wire [ID_WIDTH-1:0]     m1_awid,
+    input  wire [ADDR_WIDTH-1:0]   m1_awaddr,
+    input  wire [7:0]              m1_awlen,
+    input  wire [2:0]              m1_awsize,
+    input  wire [1:0]              m1_awburst,
+    input  wire                    m1_awvalid,
+    output wire                    m1_awready,
 
-//     //AR channel
-//     input [ADDR_WIDTH-1:0] m1_araddr,
-//     input [ID_WIDTH-1:0] m1_arid,
-//     input [7:0] m1_arlen,
-//     input [2:0] m1_arsize,
-//     input [1:0] m1_arburst,
-//     input m1_arvalid,
-//     output m1_arready,
+    input  wire [DATA_WIDTH-1:0]   m1_wdata,
+    input  wire [DATA_WIDTH/8-1:0] m1_wstrb,
+    input  wire                    m1_wlast,
+    input  wire                    m1_wvalid,
+    output wire                    m1_wready,
 
-//     //r channel
-//     output [ID_WIDTH-1:0] m1_rid,
-//     output [DATA_WIDTH-1:0] m1_rdata,
-//     output [1:0] m1_rresp,
-//     output m1_rlast,
-//     output m1_rvalid,
-//     input m1_rready,    
+    output wire [ID_WIDTH-1:0]     m1_bid,
+    output wire [1:0]              m1_bresp,
+    output wire                    m1_bvalid,
+    input  wire                    m1_bready,
 
-//     //======================================================
-//     //Master 3: 4Mbps 
-//     //======================================================
-//     //AW channel
-//     input [ADDR_WIDTH-1:0] m2_awaddr,
-//     input [ID_WIDTH-1:0] m2_awid,
-//     input [7:0] m2_awlen,
-//     input [2:0] m2_awsize,  
-//     input [1:0] m2_awburst,
-//     input m2_awvalid,
-//     output m2_awready,
+    input  wire [ID_WIDTH-1:0]     m1_arid,
+    input  wire [ADDR_WIDTH-1:0]   m1_araddr,
+    input  wire [7:0]              m1_arlen,
+    input  wire [2:0]              m1_arsize,
+    input  wire [1:0]              m1_arburst,
+    input  wire                    m1_arvalid,
+    output wire                    m1_arready,
 
-//     //w channel
-//     input [DATA_WIDTH-1:0] m2_wdata,
-//     input [DATA_WIDTH/8-1:0] m2_wstrb,
-//     input m2_wlast,
-//     input m2_wvalid,
-//     output m2_wready,   
+    output wire [ID_WIDTH-1:0]     m1_rid,
+    output wire [DATA_WIDTH-1:0]   m1_rdata,
+    output wire [1:0]              m1_rresp,
+    output wire                    m1_rlast,
+    output wire                    m1_rvalid,
+    input  wire                    m1_rready,
 
-//     //b channel
-//     output [ID_WIDTH-1:0] m2_bid,
-//     output [1:0] m2_bresp,
-//     output m2_bvalid,
-//     input m2_bready,
+    // =========================================================================
+    // Master 2
+    // =========================================================================
+    input  wire                    m2_clk,
+    input  wire                    m2_rst_n,
 
-//     //AR channel
-//     input [ADDR_WIDTH-1:0] m2_araddr,
-//     input [ID_WIDTH-1:0] m2_arid,
-//     input [7:0] m2_arlen,
-//     input [2:0] m2_arsize,
-//     input [1:0] m2_arburst,
-//     input m2_arvalid,
-//     output m2_arready,
+    input  wire [ID_WIDTH-1:0]     m2_awid,
+    input  wire [ADDR_WIDTH-1:0]   m2_awaddr,
+    input  wire [7:0]              m2_awlen,
+    input  wire [2:0]              m2_awsize,
+    input  wire [1:0]              m2_awburst,
+    input  wire                    m2_awvalid,
+    output wire                    m2_awready,
 
-//     //r channel
-//     output [ID_WIDTH-1:0] m2_rid,
-//     output [DATA_WIDTH-1:0] m2_rdata,
-//     output [1:0] m2_rresp,
-//     output m2_rlast,
-//     output m2_rvalid,
-//     input m2_rready
+    input  wire [DATA_WIDTH-1:0]   m2_wdata,
+    input  wire [DATA_WIDTH/8-1:0] m2_wstrb,
+    input  wire                    m2_wlast,
+    input  wire                    m2_wvalid,
+    output wire                    m2_wready,
 
-//      //==================================================================
-//     //slave interface
-//     //======================================================================
-//     //AW channel
-//     output [ADDR_WIDTH-1:0] s_awaddr,
-//     output [ID_WIDTH-1:0] s_awid,
-//     output [7:0] s_awlen,
-//     output [2:0] s_awsize,
-//     output [1:0] s_awburst,
-//     output s_awvalid,
-//     input s_awready,
+    output wire [ID_WIDTH-1:0]     m2_bid,
+    output wire [1:0]              m2_bresp,
+    output wire                    m2_bvalid,
+    input  wire                    m2_bready,
 
-//     //w channel
-//     output [DATA_WIDTH-1:0] s_wdata,
-//     output [STRB_WIDTH-1:0] s_wstrb,
-//     output s_wlast,
-//     output s_wvalid,
-//     input s_wready,
+    input  wire [ID_WIDTH-1:0]     m2_arid,
+    input  wire [ADDR_WIDTH-1:0]   m2_araddr,
+    input  wire [7:0]              m2_arlen,
+    input  wire [2:0]              m2_arsize,
+    input  wire [1:0]              m2_arburst,
+    input  wire                    m2_arvalid,
+    output wire                    m2_arready,
 
-//     //b channel
-//     input [ID_WIDTH+1:0] s_bid,
-//     input [1:0] s_bresp,
-//     input s_bvalid,
-//     output s_bready,
-    
-//     //AR channel
-//     output [ADDR_WIDTH-1:0] s_araddr,
-//     output [ID_WIDTH+1:0] s_arid,
-//     output [7:0] s_arlen,
-//     output [2:0] s_arsize,
-//     output [1:0] s_arburst,
-//     output s_arvalid,
-//     input s_arready,    
+    output wire [ID_WIDTH-1:0]     m2_rid,
+    output wire [DATA_WIDTH-1:0]   m2_rdata,
+    output wire [1:0]              m2_rresp,
+    output wire                    m2_rlast,
+    output wire                    m2_rvalid,
+    input  wire                    m2_rready,
 
-//     //r channel
-//     input [ID_WIDTH+1:0] s_rid,
-//     input [DATA_WIDTH-1:0] s_rdata,
-//     input [1:0] s_rresp,
-//     input s_rlast,
-//     input s_rvalid,
-//     output s_rready
-// );
+    // =========================================================================
+    // Fabric clock (crossbar + slave)
+    // =========================================================================
+    input  wire                    clk_sys,
+    input  wire                    rst_n,
 
-// wire [2:0] m_clks = {clk_m2,clk_m1,clk_m0};
-// wire [2:0] m_rst_ns = {rst_n_m2, rst_n_m1, rst_n_m0};
+    // =========================================================================
+    // Slave port (clk_sys domain) — ID width includes 2-bit master remap prefix
+    // =========================================================================
+    output wire [ADDR_WIDTH-1:0]   s_awaddr,
+    output wire [ID_WIDTH+1:0]     s_awid,
+    output wire                    s_awvalid,
+    output wire [7:0]              s_awlen,
+    output wire [2:0]              s_awsize,
+    output wire [1:0]              s_awburst,
+    input  wire                    s_awready,
 
-// // 1. Declare internal signals as arrays - AW CHANNEL
-// wire [3:0]   fifo_awid     [0:2];
-// wire [1:0]   fifo_awburst  [0:2];
-// wire [2:0]   fifo_awsize   [0:2];
-// wire [7:0]   fifo_awlen    [0:2];
-// wire [31:0]  fifo_awaddr   [0:2];
-// wire fifo_awvalid [0:2];
-// wire fifo_awready [0:2];
+    output wire [DATA_WIDTH-1:0]     s_wdata,
+    output wire [(DATA_WIDTH/8)-1:0] s_wstrb,
+    output wire                      s_wvalid,
+    output wire                      s_wlast,
+    input  wire                      s_wready,
 
-// //2. W CHANNEL 
-// wire fifo_wvalid [2:0];
-// wire fifo_wready [2:0];
-// wire fifo_wlast [2:0];
-// wire [31:0] fifo_wdata [2:0];
-// wire [3:0] fifo_wstrb [2:0];
+    input  wire [ID_WIDTH+1:0]     s_bid,
+    input  wire                    s_bvalid,
+    input  wire [1:0]              s_bresp,
+    output wire                    s_bready,
 
-// //3. AR CHANNEL 
-// wire [3:0]   fifo_arid     [0:2];
-// wire [1:0]   fifo_arburst  [0:2];
-// wire [2:0]   fifo_arsize   [0:2];
-// wire [7:0]   fifo_arlen    [0:2];
-// wire [31:0]  fifo_araddr   [0:2];
-// wire fifo_arvalid [0:2];
-// wire fifo_arready [0:2];
+    output wire [ADDR_WIDTH-1:0]   s_araddr,
+    output wire [ID_WIDTH+1:0]     s_arid,
+    output wire                    s_arvalid,
+    output wire [7:0]              s_arlen,
+    output wire [2:0]              s_arsize,
+    output wire [1:0]              s_arburst,
+    input  wire                    s_arready,
 
-// //R channel 
-//  wire [38:0] fabric_payload [0:2]; 
-    
-//     // The Demux steering logic (running on clk_sys)
-//     always @(*) begin
-//         // Default: nobody gets a valid pulse
-//         fabric_rvalid[0] = 1'b0;
-//         fabric_rvalid[1] = 1'b0;
-//         fabric_rvalid[2] = 1'b0;
+    input  wire [ID_WIDTH+1:0]     s_rid,
+    input  wire [DATA_WIDTH-1:0]   s_rdata,
+    input  wire [1:0]              s_rresp,
+    input  wire                    s_rlast,
+    input  wire                    s_rvalid,
+    output wire                    s_rready
+);
 
-//         // Use the 2-bit prefix (bits [5:4] of s_rid) to steer the transaction
-//         if (s_rvalid) begin
-//             case (s_rid[5:4])
-//                 2'b00: fabric_rvalid[0] = s_rvalid;
-//                 2'b01: fabric_rvalid[1] = s_rvalid;
-//                 2'b10: fabric_rvalid[2] = s_rvalid;
-//                 default: ;
-//             endcase
-//         end
-//     end
+    // =========================================================================
+    // Internal fabric-side wires: master N <-> crossbar (clk_sys domain,
+    // original un-remapped IDs, already CDC'd by axi_master_if)
+    // =========================================================================
+    wire [ID_WIDTH-1:0]     m0_fab_awid, m1_fab_awid, m2_fab_awid;
+    wire [ADDR_WIDTH-1:0]   m0_fab_awaddr, m1_fab_awaddr, m2_fab_awaddr;
+    wire [7:0]              m0_fab_awlen, m1_fab_awlen, m2_fab_awlen;
+    wire [2:0]              m0_fab_awsize, m1_fab_awsize, m2_fab_awsize;
+    wire [1:0]              m0_fab_awburst, m1_fab_awburst, m2_fab_awburst;
+    wire                    m0_fab_awvalid, m1_fab_awvalid, m2_fab_awvalid;
+    wire                    m0_fab_awready, m1_fab_awready, m2_fab_awready;
 
-//     //B channel 
-//     always @(*) begin
-//         // Default: nobody gets a valid pulse
-//         fabric_bvalid[0] = 1'b0;
-//         fabric_bvalid[1] = 1'b0;
-//         fabric_bvalid[2] = 1'b0;
+    wire [DATA_WIDTH-1:0]     m0_fab_wdata, m1_fab_wdata, m2_fab_wdata;
+    wire [(DATA_WIDTH/8)-1:0] m0_fab_wstrb, m1_fab_wstrb, m2_fab_wstrb;
+    wire                       m0_fab_wvalid, m1_fab_wvalid, m2_fab_wvalid;
+    wire                       m0_fab_wlast, m1_fab_wlast, m2_fab_wlast;
+    wire                       m0_fab_wready, m1_fab_wready, m2_fab_wready;
 
-//         // Use the 2-bit prefix (bits [5:4] of s_rid) to steer the transaction
-//         if (s_rvalid) begin
-//             case (s_rid[5:4])
-//                 2'b00: fabric_bvalid[0] = s_bvalid;
-//                 2'b01: fabric_bvalid[1] = s_bvalid;
-//                 2'b10: fabric_bvalid[2] = s_bvalid;
-//                 default: ;
-//             endcase
-//         end
-//     end
+    wire [ID_WIDTH-1:0]     m0_fab_bid, m1_fab_bid, m2_fab_bid;
+    wire                    m0_fab_bvalid, m1_fab_bvalid, m2_fab_bvalid;
+    wire [1:0]              m0_fab_bresp, m1_fab_bresp, m2_fab_bresp;
+    wire                    m0_fab_bready, m1_fab_bready, m2_fab_bready;
 
-// ///============================================================================================================
-// // CDC FIFO intantiation 
-// //=============================================================================================================
+    wire [ID_WIDTH-1:0]     m0_fab_arid, m1_fab_arid, m2_fab_arid;
+    wire [ADDR_WIDTH-1:0]   m0_fab_araddr, m1_fab_araddr, m2_fab_araddr;
+    wire [7:0]              m0_fab_arlen, m1_fab_arlen, m2_fab_arlen;
+    wire [2:0]              m0_fab_arsize, m1_fab_arsize, m2_fab_arsize;
+    wire [1:0]              m0_fab_arburst, m1_fab_arburst, m2_fab_arburst;
+    wire                    m0_fab_arvalid, m1_fab_arvalid, m2_fab_arvalid;
+    wire                    m0_fab_arready, m1_fab_arready, m2_fab_arready;
 
-// genvar i;
-// generate
-//     //write address channel - widht is 49 bits (32+8+4+3+2) (addr +len+id+ size + burst)- DOWNSTREAM 
-//     for (i=0; i<3; i=i+1) begin: gen_fifo_aw
-//         wire [48:0] fabric_payload;
-//         wire [48:0] master_payload;
+    wire [ID_WIDTH-1:0]     m0_fab_rid, m1_fab_rid, m2_fab_rid;
+    wire [DATA_WIDTH-1:0]   m0_fab_rdata, m1_fab_rdata, m2_fab_rdata;
+    wire [1:0]              m0_fab_rresp, m1_fab_rresp, m2_fab_rresp;
+    wire                    m0_fab_rlast, m1_fab_rlast, m2_fab_rlast;
+    wire                    m0_fab_rvalid, m1_fab_rvalid, m2_fab_rvalid;
+    wire                    m0_fab_rready, m1_fab_rready, m2_fab_rready;
 
-//         assign master_payload= (i==0)?{m0_awid,m0_awburst,m0_awsize,m0_awlen,m0_awaddr}:
-//                                 (i==1)?{m1_awid,m1_awburst,m1_awsize,m1_awlen,m1_awaddr}:
-//                                         {m2_awid,m2_awburst,m2_awsize,m2_awlen,m2_awaddr};
+    // =========================================================================
+    // Master 0 CDC firewall
+    // =========================================================================
+    axi_master_if #(
+        .DATA_WIDTH(DATA_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .ID_WIDTH(ID_WIDTH),
+        .FIFO_DEPTH(FIFO_DEPTH), .FIFO_PTR(FIFO_PTR)
+    ) u_m0_if (
+        .m_clk(m0_clk), .m_rst_n(m0_rst_n),
+        .m_awid(m0_awid), .m_awaddr(m0_awaddr), .m_awlen(m0_awlen),
+        .m_awsize(m0_awsize), .m_awburst(m0_awburst), .m_awvalid(m0_awvalid), .m_awready(m0_awready),
+        .m_wdata(m0_wdata), .m_wstrb(m0_wstrb), .m_wlast(m0_wlast), .m_wvalid(m0_wvalid), .m_wready(m0_wready),
+        .m_bid(m0_bid), .m_bresp(m0_bresp), .m_bvalid(m0_bvalid), .m_bready(m0_bready),
+        .m_arid(m0_arid), .m_araddr(m0_araddr), .m_arlen(m0_arlen),
+        .m_arsize(m0_arsize), .m_arburst(m0_arburst), .m_arvalid(m0_arvalid), .m_arready(m0_arready),
+        .m_rid(m0_rid), .m_rdata(m0_rdata), .m_rresp(m0_rresp), .m_rlast(m0_rlast), .m_rvalid(m0_rvalid), .m_rready(m0_rready),
 
-//         cdc_fifo #(.DATA_WIDTH(49), .PTR_SIZE(4), .DEPTH(16)
-//         ) u_fifo_aw (
-//             .wr_clk   (m_clks[i]),
-//             .wr_rst   (m_rst_ns[i]),
-//             .wr_valid ((i==0) ? m0_awvalid : (i==1)?m1_awvalid:m2_awvalid),
-//             .wr_ready ((i==0) ? m0_awready : (i==1)?m1_awready:m2_awready),
-//             .wr_data  (master_payload),
+        .clk_sys(clk_sys), .rst_n(rst_n),
+        .fab_awid(m0_fab_awid), .fab_awaddr(m0_fab_awaddr), .fab_awlen(m0_fab_awlen),
+        .fab_awsize(m0_fab_awsize), .fab_awburst(m0_fab_awburst), .fab_awvalid(m0_fab_awvalid), .fab_awready(m0_fab_awready),
+        .fab_wdata(m0_fab_wdata), .fab_wstrb(m0_fab_wstrb), .fab_wlast(m0_fab_wlast), .fab_wvalid(m0_fab_wvalid), .fab_wready(m0_fab_wready),
+        .fab_bid(m0_fab_bid), .fab_bresp(m0_fab_bresp), .fab_bvalid(m0_fab_bvalid), .fab_bready(m0_fab_bready),
+        .fab_arid(m0_fab_arid), .fab_araddr(m0_fab_araddr), .fab_arlen(m0_fab_arlen),
+        .fab_arsize(m0_fab_arsize), .fab_arburst(m0_fab_arburst), .fab_arvalid(m0_fab_arvalid), .fab_arready(m0_fab_arready),
+        .fab_rid(m0_fab_rid), .fab_rdata(m0_fab_rdata), .fab_rresp(m0_fab_rresp), .fab_rlast(m0_fab_rlast), .fab_rvalid(m0_fab_rvalid), .fab_rready(m0_fab_rready)
+    );
 
-//             .rd_clk (clk_sys),
-//             .rd_rst   (rst_n),
-//             .rd_valid (fifo_awvalid[i]), //internal vector array feeding skid buffer 
-//             .rd_ready (fifo_awready[i]), //internal vector array from skid buffers
-//             .rd_data (fabric_payload)
-//         );
-//         //unpack payload into internal fabric wires heading to skid buffers 
-//         assign fifo_awid[i] = fabric_payload[48:45];
-//         assign fifo_awburst[i] = fabric_payload[44:43];
-//         assign fifo_awsize[i] = fabric_payload[42:40];
-//         assign fifo_awlen[i] = fabric_payload[39:32];
-//         assign fifo_awaddr[i] = fabric_payload[31:0];
-//     end
+    // =========================================================================
+    // Master 1 CDC firewall
+    // =========================================================================
+    axi_master_if #(
+        .DATA_WIDTH(DATA_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .ID_WIDTH(ID_WIDTH),
+        .FIFO_DEPTH(FIFO_DEPTH), .FIFO_PTR(FIFO_PTR)
+    ) u_m1_if (
+        .m_clk(m1_clk), .m_rst_n(m1_rst_n),
+        .m_awid(m1_awid), .m_awaddr(m1_awaddr), .m_awlen(m1_awlen),
+        .m_awsize(m1_awsize), .m_awburst(m1_awburst), .m_awvalid(m1_awvalid), .m_awready(m1_awready),
+        .m_wdata(m1_wdata), .m_wstrb(m1_wstrb), .m_wlast(m1_wlast), .m_wvalid(m1_wvalid), .m_wready(m1_wready),
+        .m_bid(m1_bid), .m_bresp(m1_bresp), .m_bvalid(m1_bvalid), .m_bready(m1_bready),
+        .m_arid(m1_arid), .m_araddr(m1_araddr), .m_arlen(m1_arlen),
+        .m_arsize(m1_arsize), .m_arburst(m1_arburst), .m_arvalid(m1_arvalid), .m_arready(m1_arready),
+        .m_rid(m1_rid), .m_rdata(m1_rdata), .m_rresp(m1_rresp), .m_rlast(m1_rlast), .m_rvalid(m1_rvalid), .m_rready(m1_rready),
 
-//     //WRITE DATA CHANNEL - WIDTH +LAST +STRB = 32+1+4 = 37 BITS - DOWNSTREAM
-//     for (i=0; i<3; i=i+1) begin : gen_fifo_w
-//         wire [36:0] fabric_payload;
-//         wire [36:0] master_payload;
+        .clk_sys(clk_sys), .rst_n(rst_n),
+        .fab_awid(m1_fab_awid), .fab_awaddr(m1_fab_awaddr), .fab_awlen(m1_fab_awlen),
+        .fab_awsize(m1_fab_awsize), .fab_awburst(m1_fab_awburst), .fab_awvalid(m1_fab_awvalid), .fab_awready(m1_fab_awready),
+        .fab_wdata(m1_fab_wdata), .fab_wstrb(m1_fab_wstrb), .fab_wlast(m1_fab_wlast), .fab_wvalid(m1_fab_wvalid), .fab_wready(m1_fab_wready),
+        .fab_bid(m1_fab_bid), .fab_bresp(m1_fab_bresp), .fab_bvalid(m1_fab_bvalid), .fab_bready(m1_fab_bready),
+        .fab_arid(m1_fab_arid), .fab_araddr(m1_fab_araddr), .fab_arlen(m1_fab_arlen),
+        .fab_arsize(m1_fab_arsize), .fab_arburst(m1_fab_arburst), .fab_arvalid(m1_fab_arvalid), .fab_arready(m1_fab_arready),
+        .fab_rid(m1_fab_rid), .fab_rdata(m1_fab_rdata), .fab_rresp(m1_fab_rresp), .fab_rlast(m1_fab_rlast), .fab_rvalid(m1_fab_rvalid), .fab_rready(m1_fab_rready)
+    );
 
-//         assign master_payload = (i==0)?{m0_wlast,m0_wstrb,m0_wdata}:
-//                                 (i==1)?{m1_wlast,m1_wstrb,m1_wdata}:
-//                                         {m2_wlast,m2_wstrb,m2_wdata};
+    // =========================================================================
+    // Master 2 CDC firewall
+    // =========================================================================
+    axi_master_if #(
+        .DATA_WIDTH(DATA_WIDTH), .ADDR_WIDTH(ADDR_WIDTH), .ID_WIDTH(ID_WIDTH),
+        .FIFO_DEPTH(FIFO_DEPTH), .FIFO_PTR(FIFO_PTR)
+    ) u_m2_if (
+        .m_clk(m2_clk), .m_rst_n(m2_rst_n),
+        .m_awid(m2_awid), .m_awaddr(m2_awaddr), .m_awlen(m2_awlen),
+        .m_awsize(m2_awsize), .m_awburst(m2_awburst), .m_awvalid(m2_awvalid), .m_awready(m2_awready),
+        .m_wdata(m2_wdata), .m_wstrb(m2_wstrb), .m_wlast(m2_wlast), .m_wvalid(m2_wvalid), .m_wready(m2_wready),
+        .m_bid(m2_bid), .m_bresp(m2_bresp), .m_bvalid(m2_bvalid), .m_bready(m2_bready),
+        .m_arid(m2_arid), .m_araddr(m2_araddr), .m_arlen(m2_arlen),
+        .m_arsize(m2_arsize), .m_arburst(m2_arburst), .m_arvalid(m2_arvalid), .m_arready(m2_arready),
+        .m_rid(m2_rid), .m_rdata(m2_rdata), .m_rresp(m2_rresp), .m_rlast(m2_rlast), .m_rvalid(m2_rvalid), .m_rready(m2_rready),
 
-//         cdc_fifo #(.DATA_WIDTH(37), .PTR_SIZE(4), .DEPTH(16)
-//         ) u_fifo_w (
-//             .wr_clk   (m_clks[i]),
-//             .wr_rst   (m_rst_ns[i]),
-//             .wr_valid ((i==0) ? m0_wvalid : (i==1)?m1_wvalid:m2_wvalid),
-//             .wr_ready ((i==0) ? m0_wready : (i==1)?m1_wready:m2_wready),
-//             .wr_data  (master_payload),
+        .clk_sys(clk_sys), .rst_n(rst_n),
+        .fab_awid(m2_fab_awid), .fab_awaddr(m2_fab_awaddr), .fab_awlen(m2_fab_awlen),
+        .fab_awsize(m2_fab_awsize), .fab_awburst(m2_fab_awburst), .fab_awvalid(m2_fab_awvalid), .fab_awready(m2_fab_awready),
+        .fab_wdata(m2_fab_wdata), .fab_wstrb(m2_fab_wstrb), .fab_wlast(m2_fab_wlast), .fab_wvalid(m2_fab_wvalid), .fab_wready(m2_fab_wready),
+        .fab_bid(m2_fab_bid), .fab_bresp(m2_fab_bresp), .fab_bvalid(m2_fab_bvalid), .fab_bready(m2_fab_bready),
+        .fab_arid(m2_fab_arid), .fab_araddr(m2_fab_araddr), .fab_arlen(m2_fab_arlen),
+        .fab_arsize(m2_fab_arsize), .fab_arburst(m2_fab_arburst), .fab_arvalid(m2_fab_arvalid), .fab_arready(m2_fab_arready),
+        .fab_rid(m2_fab_rid), .fab_rdata(m2_fab_rdata), .fab_rresp(m2_fab_rresp), .fab_rlast(m2_fab_rlast), .fab_rvalid(m2_fab_rvalid), .fab_rready(m2_fab_rready)
+    );
 
-//             .rd_clk (clk_sys),
-//             .rd_rst   (rst_n),
-//             .rd_valid (fifo_wvalid[i]), //internal vector array feeding skid buffer 
-//             .rd_ready (fifo_wready[i]), //internal vector array from skid buffers
-//             .rd_data (fabric_payload)
-//         );
-//         //unpack payload into internal fabric wires heading to skid buffers 
-//         assign fifo_wdata[i] = fabric_payload[31:0];
-//         assign fifo_wstrb[i] = fabric_payload[35:32];
-//         assign fifo_wlast[i] = fabric_payload[36];
-//     end
+    // =========================================================================
+    // Crossbar — arbitration, mux/demux, ID remap, drives the slave directly
+    // =========================================================================
+    crossbar #(
+        .W1(W1), .W2(W2), .W3(W3),
+        .ADDR_WIDTH(ADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH), .ID_WIDTH(ID_WIDTH)
+    ) u_crossbar (
+        .clk_sys(clk_sys), .rst_n(rst_n),
 
-//     //read address channel - widht is 49 bits (32+8+4+3+2) (addr +len+id+ size + burst)- DOWNSTREAM 
-//     for (i=0; i<3; i=i+1) begin: gen_fifo_ar
-//         wire [48:0] fabric_payload;
-//         wire [48:0] master_payload;
+        .m0_fab_awaddr(m0_fab_awaddr), .m0_fab_awid(m0_fab_awid), .m0_fab_awvalid(m0_fab_awvalid),
+        .m0_fab_awlen(m0_fab_awlen), .m0_fab_awsize(m0_fab_awsize), .m0_fab_awburst(m0_fab_awburst), .m0_fab_awready(m0_fab_awready),
+        .m1_fab_awaddr(m1_fab_awaddr), .m1_fab_awid(m1_fab_awid), .m1_fab_awvalid(m1_fab_awvalid),
+        .m1_fab_awlen(m1_fab_awlen), .m1_fab_awsize(m1_fab_awsize), .m1_fab_awburst(m1_fab_awburst), .m1_fab_awready(m1_fab_awready),
+        .m2_fab_awaddr(m2_fab_awaddr), .m2_fab_awid(m2_fab_awid), .m2_fab_awvalid(m2_fab_awvalid),
+        .m2_fab_awlen(m2_fab_awlen), .m2_fab_awsize(m2_fab_awsize), .m2_fab_awburst(m2_fab_awburst), .m2_fab_awready(m2_fab_awready),
 
-//         assign master_payload= (i==0)?{m0_arid,m0_arburst,m0_arsize,m0_arlen,m0_araddr}:
-//                                 (i==1)?{m1_arid,m1_arburst,m1_arsize,m1_arlen,m1_araddr}:
-//                                         {m2_arid,m2_arburst,m2_arsize,m2_arlen,m2_araddr};
+        .s_awaddr(s_awaddr), .s_awid(s_awid), .s_awvalid(s_awvalid),
+        .s_awlen(s_awlen), .s_awsize(s_awsize), .s_awburst(s_awburst), .s_awready(s_awready),
 
-//         cdc_fifo #(.DATA_WIDTH(49), .PTR_SIZE(4), .DEPTH(16)
-//         ) u_fifo_ar (
-//             .wr_clk   (m_clks[i]),
-//             .wr_rst   (m_rst_ns[i]),
-//             .wr_valid ((i==0) ? m0_arvalid : (i==1)?m1_arvalid:m2_arvalid),
-//             .wr_ready ((i==0) ? m0_arready : (i==1)?m1_arready:m2_arready),
-//             .wr_data  (master_payload),
+        .m0_fab_wdata(m0_fab_wdata), .m0_fab_wstrb(m0_fab_wstrb), .m0_fab_wvalid(m0_fab_wvalid), .m0_fab_wlast(m0_fab_wlast), .m0_fab_wready(m0_fab_wready),
+        .m1_fab_wdata(m1_fab_wdata), .m1_fab_wstrb(m1_fab_wstrb), .m1_fab_wvalid(m1_fab_wvalid), .m1_fab_wlast(m1_fab_wlast), .m1_fab_wready(m1_fab_wready),
+        .m2_fab_wdata(m2_fab_wdata), .m2_fab_wstrb(m2_fab_wstrb), .m2_fab_wvalid(m2_fab_wvalid), .m2_fab_wlast(m2_fab_wlast), .m2_fab_wready(m2_fab_wready),
 
-//             .rd_clk (clk_sys),
-//             .rd_rst   (rst_n),
-//             .rd_valid (fifo_arvalid[i]), //internal vector array feeding skid buffer 
-//             .rd_ready (fifo_arready[i]), //internal vector array from skid buffers
-//             .rd_data (fabric_payload)
-//         );
-//         //unpack payload into internal fabric wires heading to skid buffers 
-//         assign fifo_arid[i] = fabric_payload[48:45];
-//         assign fifo_arburst[i] = fabric_payload[44:43];
-//         assign fifo_arsize[i] = fabric_payload[42:40];
-//         assign fifo_arlen[i] = fabric_payload[39:32];
-//         assign fifo_araddr[i] = fabric_payload[31:0];
-//     end
+        .s_wdata(s_wdata), .s_wstrb(s_wstrb), .s_wvalid(s_wvalid), .s_wlast(s_wlast), .s_wready(s_wready),
 
-//     // Read Data Channel (R) - UPSTREAM -  39 Bits!
+        .s_bid(s_bid), .s_bvalid(s_bvalid), .s_bresp(s_bresp), .s_bready(s_bready),
+        .m0_fab_bid(m0_fab_bid), .m0_fab_bvalid(m0_fab_bvalid), .m0_fab_bresp(m0_fab_bresp), .m0_fab_bready(m0_fab_bready),
+        .m1_fab_bid(m1_fab_bid), .m1_fab_bvalid(m1_fab_bvalid), .m1_fab_bresp(m1_fab_bresp), .m1_fab_bready(m1_fab_bready),
+        .m2_fab_bid(m2_fab_bid), .m2_fab_bvalid(m2_fab_bvalid), .m2_fab_bresp(m2_fab_bresp), .m2_fab_bready(m2_fab_bready),
 
-//     for (i = 0; i < 3; i = i + 1) begin : gen_fifo_r
-//         wire [38:0] wdata_payload;
+        .m0_fab_araddr(m0_fab_araddr), .m0_fab_arid(m0_fab_arid), .m0_fab_arvalid(m0_fab_arvalid),
+        .m0_fab_arlen(m0_fab_arlen), .m0_fab_arsize(m0_fab_arsize), .m0_fab_arburst(m0_fab_arburst), .m0_fab_arready(m0_fab_arready),
+        .m1_fab_araddr(m1_fab_araddr), .m1_fab_arid(m1_fab_arid), .m1_fab_arvalid(m1_fab_arvalid),
+        .m1_fab_arlen(m1_fab_arlen), .m1_fab_arsize(m1_fab_arsize), .m1_fab_arburst(m1_fab_arburst), .m1_fab_arready(m1_fab_arready),
+        .m2_fab_araddr(m2_fab_araddr), .m2_fab_arid(m2_fab_arid), .m2_fab_arvalid(m2_fab_arvalid),
+        .m2_fab_arlen(m2_fab_arlen), .m2_fab_arsize(m2_fab_arsize), .m2_fab_arburst(m2_fab_arburst), .m2_fab_arready(m2_fab_arready),
 
-//         // PACKING: Notice we ONLY pass s_rid[3:0] (the native 4-bit ID!)
-//         assign wdata_payload = {s_rid[3:0], s_rlast, s_rresp, s_rdata};
-        
-//         cdc_fifo #(
-//             .DATA_WIDTH(39), // Corrected down to 39 bits!
-//             .PTR_SIZE(4), 
-//             .DEPTH(16)
-//         ) u_fifo_r (
-//             .wr_clk   (clk_sys), 
-//             .wr_rst   (rst_n),
-//             .wr_valid (fabric_rvalid[i]), 
-//             .wr_ready (fabric_rready[i]), 
-//             .wr_data  (wdata_payload),
+        .s_araddr(s_araddr), .s_arid(s_arid), .s_arvalid(s_arvalid),
+        .s_arlen(s_arlen), .s_arsize(s_arsize), .s_arburst(s_arburst), .s_arready(s_arready),
 
-//             .rd_clk   (m_clks[i]),
-//             .rd_rst   (m_rst_ns[i]),
-//             .rd_valid ( (i == 0) ? m0_rvalid : (i == 1) ? m1_rvalid : m2_rvalid ),
-//             .rd_ready ( (i == 0) ? m0_rready : (i == 1) ? m1_rready : m2_rready ),
-//             .rd_data  (fabric_payload[i])
-//         );
+        .s_rid(s_rid), .s_rdata(s_rdata), .s_rresp(s_rresp), .s_rlast(s_rlast), .s_rvalid(s_rvalid), .s_rready(s_rready),
 
-//         // UNPACKING: Connects clean 4-bit ID directly to the master port
-//         if (i == 0) begin
-//             assign {m0_rid, m0_rlast, m0_rresp, m0_rdata} = fabric_payload[0];
-//         end 
-//         else if (i == 1) begin
-//             assign {m1_rid, m1_rlast, m1_rresp, m1_rdata} = fabric_payload[1];
-//         end 
-//         else begin
-//             assign {m2_rid, m2_rlast, m2_rresp, m2_rdata} = fabric_payload[2];
-//         end
-//     end
+        .m0_fab_rid(m0_fab_rid), .m0_fab_rdata(m0_fab_rdata), .m0_fab_rresp(m0_fab_rresp), .m0_fab_rlast(m0_fab_rlast), .m0_fab_rvalid(m0_fab_rvalid), .m0_fab_rready(m0_fab_rready),
+        .m1_fab_rid(m1_fab_rid), .m1_fab_rdata(m1_fab_rdata), .m1_fab_rresp(m1_fab_rresp), .m1_fab_rlast(m1_fab_rlast), .m1_fab_rvalid(m1_fab_rvalid), .m1_fab_rready(m1_fab_rready),
+        .m2_fab_rid(m2_fab_rid), .m2_fab_rdata(m2_fab_rdata), .m2_fab_rresp(m2_fab_rresp), .m2_fab_rlast(m2_fab_rlast), .m2_fab_rvalid(m2_fab_rvalid), .m2_fab_rready(m2_fab_rready)
+    );
 
-//     // B - write response channel - UPSTREAM - bid + bresp = 4+2=6
-//     for (i=0; i<3; i=i+1) begin: gen_fifo_b
-//         wire [5:0] b_payload;
-
-//         assign b_payload={s_bid[3:0],s_bresp};
-
-//         cdc_fifo #(.DATA_WIDTH(6), .PTR_SIZE(4), .DEPTH(16)
-//         ) u_fifo_b (
-//             .wr_clk   (clk_sys), 
-//             .wr_rst   (rst_n),
-//             .wr_valid (fabric_bvalid[i]), 
-//             .wr_ready (fabric_bready[i]), 
-//             .wr_data  (b_payload),
-
-//             .rd_clk   (m_clks[i]),
-//             .rd_rst   (m_rst_ns[i]),
-//             .rd_valid ( (i == 0) ? m0_bvalid : (i == 1) ? m1_bvalid : m2_bvalid ),
-//             .rd_ready ( (i == 0) ? m0_bready : (i == 1) ? m1_bready : m2_bready ),
-//             .rd_data  (fabric_payload[i])
-//         );
-    
-//     if (i == 0) begin
-//             assign {m0_bid,m0_bresp = fabric_payload[0];
-//         end 
-//         else if (i == 1) begin
-//             assign {m1_bid, m1_bresp} = fabric_payload[1];
-//         end 
-//         else begin
-//             assign {m2_bid, m2_bresp} = fabric_payload[2];
-//         end
-//     end
-
-// endgenerate
-
-// //==================================
-// //look for b and r channel generate after arbiter instantiation 
-// //==================================
-
-// //==========================================================
-// //for now not using skid buffer 
-// //==========================================================
-
-// //master sends  write request and as write address gives address coreesponding to that write will be performed
-// //B channel is single to many so it uses demux
-// //we require one wrr arbiter for write adress 
-
-// //----------------WRITE ---------------------------------------------
-
-// wire w_req0 = fifo_awvalid[0]; 
-// wire w_req1 = fifo_awvalid[1];
-// wire w_req2 = fifo_awvalid[2];
-
-// wire w_grant0, w_grant1, w_grant2; // Changed from reg to wire
-
-// wrr_arbiter #(
-//     .W1(1), .W2(2), .W3(4)
-// ) u_wrr_write ( // Unique instance name
-//     .clk    (clk_sys),
-//     .rst_n  (rst_n),
-//     .req0   (w_req0),
-//     .req1   (w_req1),
-//     .req2   (w_req2),
-//     .grant0 (w_grant0),
-//     .grant1 (w_grant1),
-//     .grant2 (w_grant2)
-// );
-
-// // READ adrress will need arbiter
-// //as one salve is there so demux is used for read channel
-// //-----------------READ ----------------------
-
-// wire r_req0 = fifo_arvalid[0]; // Fixed hyphen syntax error
-// wire r_req1 = fifo_arvalid[1];
-// wire r_req2 = fifo_arvalid[2];
-
-// wire r_grant0, r_grant1, r_grant2; // Changed from reg to wire
-
-// wrr_arbiter #(
-//     .W1(1), .W2(2), .W3(4)
-// ) u_wrr_read (
-//     .clk    (clk_sys),
-//     .rst_n  (rst_n),
-//     .req0   (r_req0),
-//     .req1   (r_req1),
-//     .req2   (r_req2),
-//     .grant0 (r_grant0),
-//     .grant1 (r_grant1),
-//     .grant2 (r_grant2)
-// );
-
-// // --------AW mux ------------
-
+endmodule

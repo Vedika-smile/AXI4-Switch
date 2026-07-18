@@ -34,8 +34,3 @@ module READ_PTR #(
  assign rempty = (g_wr_ptr_sync == g_rd_ptr_next);
 
 endmodule 
- 
- 
-
- 
- 

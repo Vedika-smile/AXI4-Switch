@@ -207,6 +207,7 @@ module crossbar #(
         .ADDR_WIDTH(ADDR_WIDTH), .ID_WIDTH(ID_WIDTH)
     ) u_aw (
         .grant(w_grant),
+        .aw_phase_active(state == AW_PHASE),
         .m0_awaddr(m0_fab_awaddr), .m0_awid(m0_fab_awid), .m0_awvalid(m0_fab_awvalid),
         .m0_awlen(m0_fab_awlen), .m0_awsize(m0_fab_awsize), .m0_awburst(m0_fab_awburst),
         .m0_awready(m0_fab_awready),
@@ -225,6 +226,7 @@ module crossbar #(
         .DATA_WIDTH(DATA_WIDTH)
     ) u_w_mux (
         .grant(w_grant),
+        .w_phase_active(state == W_PHASE),
         .m0_wdata(m0_fab_wdata), .m0_wstrb(m0_fab_wstrb), .m0_wvalid(m0_fab_wvalid), .m0_wlast(m0_fab_wlast), .m0_wready(m0_fab_wready),
         .m1_wdata(m1_fab_wdata), .m1_wstrb(m1_fab_wstrb), .m1_wvalid(m1_fab_wvalid), .m1_wlast(m1_fab_wlast), .m1_wready(m1_fab_wready),
         .m2_wdata(m2_fab_wdata), .m2_wstrb(m2_fab_wstrb), .m2_wvalid(m2_fab_wvalid), .m2_wlast(m2_fab_wlast), .m2_wready(m2_fab_wready),
